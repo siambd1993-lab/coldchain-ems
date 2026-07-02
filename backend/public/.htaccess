@@ -1,0 +1,27 @@
+# ColdChain EMS — single-origin shared-hosting routing.
+# The built admin SPA (index.html + assets/) is deployed into this same
+# public/ directory, so one subdomain serves both the app shell and the API.
+# Local dev never reads this file (nginx + Vite handle routing there).
+
+# Serve the SPA shell for "/" (must beat index.php).
+DirectoryIndex index.html index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # CGI/LiteSpeed strips the Authorization header by default — hand it
+    # through explicitly or every JWT request arrives unauthenticated.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Real files and directories (SPA assets, storage symlink…) as-is.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # API + health endpoints go to Laravel.
+    RewriteRule ^(api|up)(/|$) index.php [L]
+
+    # Everything else is an SPA client-side route — serve the app shell.
+    RewriteRule ^ index.html [L]
+</IfModule>

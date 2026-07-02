@@ -39,7 +39,15 @@ use Illuminate\Support\Facades\Hash;
  */
 class DemoSeeder extends Seeder
 {
-    private const DEFAULT_PASSWORD = 'password';
+    /**
+     * Password for every seeded account. Defaults to "password" for local
+     * dev; MUST be overridden via DEMO_PASSWORD when seeding anything
+     * reachable from the internet.
+     */
+    private function defaultPassword(): string
+    {
+        return (string) env('DEMO_PASSWORD', 'password');
+    }
 
     public function run(): void
     {
@@ -70,7 +78,7 @@ class DemoSeeder extends Seeder
             ['email' => 'admin@coldchain.test'],
             [
                 'name'               => 'Platform Admin',
-                'password'           => Hash::make(self::DEFAULT_PASSWORD),
+                'password'           => Hash::make($this->defaultPassword()),
                 'tenant_id'          => null,
                 'is_platform_admin'  => true,
                 'status'             => 'active',
@@ -156,7 +164,7 @@ class DemoSeeder extends Seeder
                     'tenant_id'         => $tenant->id,
                     'branch_id'         => $branchId,
                     'name'              => $name,
-                    'password'          => Hash::make(self::DEFAULT_PASSWORD),
+                    'password'          => Hash::make($this->defaultPassword()),
                     'status'            => 'active',
                     'email_verified_at' => now(),
                 ],
