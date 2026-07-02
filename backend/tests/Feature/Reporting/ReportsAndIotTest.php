@@ -176,3 +176,48 @@ test('cross-tenant device is invisible', function (): void {
 
     $this->getJson("/api/v1/devices/{$foreign->id}", $this->headers)->assertNotFound();
 });
+
+test('live energy flow returns a balanced simulated state', function (): void {
+    $resp = $this->getJson('/api/v1/energy/live', $this->headers)->assertOk();
+
+    expect($resp->json('data.mode'))->toBe('simulated')
+        ->and($resp->json('data.load_kw'))->toBeGreaterThan(0)
+        ->and($resp->json('data.battery.soc_pct'))->toBeGreaterThanOrEqual(0)
+        ->and($resp->json('data.battery.soc_pct'))->toBeLessThanOrEqual(100);
+
+    // Every reported flow moves real power.
+    foreach ($resp->json('data.flows') as $flow) {
+        expect($flow['kw'])->toBeGreaterThan(0);
+    }
+});
+
+test('energy insights produce peak-shift and anomaly findings', function (): void {
+    // 14 normal grid days + one wild spike yesterday.
+    for ($d = 15; $d >= 2; $d--) {
+        EnergyConsumption::create([
+            'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+            'date' => now()->subDays($d)->toDateString(), 'source' => 'grid',
+            'energy_kwh' => 100, 'cost_poisha' => 95_000,
+        ]);
+    }
+    EnergyConsumption::create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'date' => now()->subDay()->toDateString(), 'source' => 'grid',
+        'energy_kwh' => 400, 'cost_poisha' => 380_000,
+    ]);
+
+    $resp  = $this->getJson('/api/v1/energy/insights', $this->headers)->assertOk();
+    $types = collect($resp->json('data.insights'))->pluck('type');
+
+    expect($types)->toContain('anomaly')->and($types)->toContain('peak_shift');
+
+    $peak = collect($resp->json('data.insights'))->firstWhere('type', 'peak_shift');
+    expect($peak['saving_poisha_monthly'])->toBeGreaterThan(0);
+});
+
+test('operator is forbidden from energy endpoints', function (): void {
+    $operator = createUser($this->tenant, $this->branch, RoleEnum::Operator);
+
+    $this->getJson('/api/v1/energy/live', apiHeaders($operator, $this->branch))
+        ->assertForbidden();
+});

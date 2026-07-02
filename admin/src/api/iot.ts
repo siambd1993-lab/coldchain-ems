@@ -1,5 +1,5 @@
 import api from './client'
-import type { Device, AlertRow, EnergySummary, Paginated } from '@/types'
+import type { Device, AlertRow, EnergySummary, EnergyLive, EnergyInsights, Paginated } from '@/types'
 
 export interface DeviceFilters {
   page?:        number
@@ -56,4 +56,10 @@ export const alertsApi = {
 export const energyApi = {
   summary: (params: { from?: string; to?: string } = {}) =>
     api.get<{ data: EnergySummary }>('/energy/summary', { params }).then((r) => r.data.data),
+
+  live: () =>
+    api.get<{ data: EnergyLive }>('/energy/live').then((r) => r.data.data),
+
+  insights: () =>
+    api.get<{ data: EnergyInsights }>('/energy/insights').then((r) => r.data.data),
 }

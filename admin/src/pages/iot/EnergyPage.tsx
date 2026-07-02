@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Zap, Sun, Fuel, PlugZap, Leaf } from 'lucide-react'
+import { Zap, Sun, Fuel, PlugZap, Leaf, Sparkles, TrendingDown, AlertTriangle, Info } from 'lucide-react'
 import { energyApi } from '@/api/iot'
-import { Card, CardHeader, CardTitle, Input, Button } from '@/components/ui'
+import { Card, CardHeader, CardTitle, Input, Button, Badge } from '@/components/ui'
 import { formatMoney } from '@/utils/format'
 import { cn } from '@/utils/cn'
+import { EnergyFlow } from './EnergyFlow'
 
 function iso(d: Date): string {
   return d.toISOString().slice(0, 10)
@@ -25,6 +26,12 @@ export function EnergyPage() {
   const { data, isError } = useQuery({
     queryKey: ['energy-summary', range],
     queryFn:  () => energyApi.summary(range),
+  })
+
+  const insights = useQuery({
+    queryKey: ['energy-insights'],
+    queryFn:  () => energyApi.insights(),
+    staleTime: 60_000,
   })
 
   const maxDay = Math.max(
@@ -51,6 +58,63 @@ export function EnergyPage() {
           <Button type="submit" size="sm" variant="outline">Apply</Button>
         </form>
       </div>
+
+      {/* Live Tesla-style flow */}
+      <EnergyFlow />
+
+      {/* AI insights */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <Sparkles className="mr-1.5 inline h-4 w-4 text-purple-500" />
+            AI energy insights
+          </CardTitle>
+          <span className="text-xs text-gray-400">rule engine v1 · learns more with live telemetry</span>
+        </CardHeader>
+        <div className="grid grid-cols-1 gap-3 px-4 pb-4 lg:grid-cols-2">
+          {insights.data?.insights.map((ins, i) => {
+            const Icon = ins.severity === 'warning' ? AlertTriangle
+              : ins.severity === 'opportunity' ? TrendingDown : Info
+            return (
+              <div
+                key={i}
+                className={cn(
+                  'rounded-xl border p-4',
+                  ins.severity === 'warning' ? 'border-amber-200 bg-amber-50/40'
+                    : ins.severity === 'opportunity' ? 'border-emerald-200 bg-emerald-50/40'
+                    : 'border-gray-100 bg-gray-50/40',
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                    <Icon className={cn(
+                      'h-4 w-4',
+                      ins.severity === 'warning' ? 'text-amber-500'
+                        : ins.severity === 'opportunity' ? 'text-emerald-500' : 'text-gray-400',
+                    )} />
+                    {ins.title}
+                  </p>
+                  {ins.saving_poisha_monthly !== undefined && (
+                    <Badge variant="green">save ≈ {formatMoney(ins.saving_poisha_monthly)}/mo</Badge>
+                  )}
+                  {ins.cost_poisha_monthly !== undefined && (
+                    <Badge variant="red">{formatMoney(ins.cost_poisha_monthly)}/mo</Badge>
+                  )}
+                </div>
+                <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{ins.detail}</p>
+              </div>
+            )
+          })}
+          {insights.data?.insights.length === 0 && (
+            <p className="col-span-2 py-6 text-center text-sm text-gray-400">
+              No recommendations right now — everything looks efficient.
+            </p>
+          )}
+          {insights.isError && (
+            <p className="col-span-2 py-6 text-center text-sm text-red-500">Could not load insights.</p>
+          )}
+        </div>
+      </Card>
 
       {isError && (
         <Card><p className="py-8 text-center text-sm text-red-500">Could not load energy data.</p></Card>

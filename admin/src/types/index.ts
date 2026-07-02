@@ -136,6 +136,38 @@ export interface AlertRow {
   resolution_note: string | null
 }
 
+export interface EnergyLive {
+  mode:         'simulated' | 'live'
+  timestamp:    string
+  is_peak_hour: boolean
+  solar_kw:     number
+  load_kw:      number
+  generator_kw: number
+  /** positive = importing from grid, negative = exporting */
+  grid_kw:      number
+  battery: {
+    soc_pct: number
+    /** positive = discharging, negative = charging */
+    kw: number
+  }
+  flows: { from: string; to: string; kw: number }[]
+}
+
+export interface EnergyInsight {
+  type:                   string
+  severity:               'info' | 'warning' | 'opportunity'
+  title:                  string
+  detail:                 string
+  saving_poisha_monthly?: number
+  cost_poisha_monthly?:   number
+}
+
+export interface EnergyInsights {
+  generated_at: string
+  engine:       string
+  insights:     EnergyInsight[]
+}
+
 export interface EnergySummary {
   from:              string
   to:                string

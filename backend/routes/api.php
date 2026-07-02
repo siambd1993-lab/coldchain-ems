@@ -236,8 +236,11 @@ Route::prefix('v1')->group(function (): void {
             Route::post('alerts/{alert}/resolve', [AlertController::class, 'resolve'])
                 ->middleware('permission:alerts.acknowledge');
 
-            Route::get('energy/summary', [EnergyController::class, 'summary'])
-                ->middleware('permission:energy.view');
+            Route::middleware('permission:energy.view')->group(function (): void {
+                Route::get('energy/summary', [EnergyController::class, 'summary']);
+                Route::get('energy/live', [EnergyController::class, 'live']);
+                Route::get('energy/insights', [EnergyController::class, 'insights']);
+            });
 
         }); // end tenant-scoped group
 
