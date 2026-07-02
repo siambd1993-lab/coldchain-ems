@@ -11,6 +11,7 @@ import {
   Warehouse,
   BellRing,
   BarChart3,
+  Smartphone,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 
@@ -178,13 +179,22 @@ export function LandingPage() {
           Sign in with your operator account — or contact us to get your cold
           storage onboarded.
         </p>
-        <Link
-          to={isAuthenticated ? '/dashboard' : '/login'}
-          className="mt-7 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-        >
-          {isAuthenticated ? 'Open Dashboard' : 'Sign In'}
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            to={isAuthenticated ? '/dashboard' : '/login'}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            {isAuthenticated ? 'Open Dashboard' : 'Sign In'}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <a
+            href="/ColdChainEMS.apk"
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-8 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <Smartphone className="h-4 w-4" />
+            Download Android App
+          </a>
+        </div>
       </section>
 
       {/* ── Footer ───────────────────────────────────────────────────────── */}

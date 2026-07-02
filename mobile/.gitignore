@@ -1,0 +1,9 @@
+# NEVER commit the signing key or its password — every future app update
+# must be signed with this exact key. Back both files up somewhere safe.
+android.keystore
+keystore-password.txt
+
+# Build artifacts
+twa/app/build/
+twa/.gradle/
+*.apk

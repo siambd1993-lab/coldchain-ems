@@ -10,6 +10,9 @@ AddHandler application/x-httpd-alt-php84___lsphp .php
 # Serve the SPA shell for "/" (must beat index.php).
 DirectoryIndex index.html index.php
 
+# Android package downloads install directly instead of opening as text.
+AddType application/vnd.android.package-archive .apk
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
 

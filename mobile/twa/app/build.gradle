@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'bd.decl.coldchain'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "bd.decl.coldchain"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("/work/android.keystore")
+            storePassword System.getenv("KS_PASS")
+            keyAlias "coldchain"
+            keyPassword System.getenv("KS_PASS")
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
