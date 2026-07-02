@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Enums\Role as RoleEnum;
+use App\Models\Alert;
 use App\Models\Branch;
 use App\Models\Chamber;
 use App\Models\Customer;
+use App\Models\Device;
+use App\Models\DeviceChannel;
+use App\Models\EnergyConsumption;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Product;
@@ -67,6 +71,7 @@ class DemoSeeder extends Seeder
             $storageUnits    = $this->seedStorageUnits($tenant, $branch1, $chambers);
             $this->seedInventory($tenant, $branch1, $customers, $products, $chambers, $storageUnits, $ratePlans); // $ratePlans is already the flat array
             $this->seedBillingData($tenant, $branch1, $customers);
+            $this->seedIotAndEnergy($tenant, $branch1, $chambers);
         });
     }
 
@@ -498,6 +503,188 @@ class DemoSeeder extends Seeder
                 ]);
 
                 $customer->decrement('balance_poisha', $paid);
+            }
+        }
+    }
+
+    // ── IoT devices, alerts & energy history ────────────────────────────
+
+    /**
+     * Demo telemetry world: sensors per chamber, an energy meter, a realistic
+     * alert inbox, and 30 days of per-source energy consumption. Values are
+     * static snapshots — live ingestion needs the MQTT pipeline.
+     *
+     * @param  array<int, Chamber>  $chambers
+     */
+    private function seedIotAndEnergy(Tenant $tenant, Branch $branch, array $chambers): void
+    {
+        if (Device::withoutTenantScope()->where('tenant_id', $tenant->id)->exists()) {
+            return; // idempotent
+        }
+
+        // One temp/humidity sensor per chamber + a branch-level energy meter.
+        foreach ($chambers as $i => $chamber) {
+            $device = Device::create([
+                'tenant_id'    => $tenant->id,
+                'branch_id'    => $branch->id,
+                'chamber_id'   => $chamber->id,
+                'device_uid'   => sprintf('SENS-%s-%02d', $branch->code ?? 'BR', $i + 1),
+                'name'         => "{$chamber->name} — Temp/RH Sensor",
+                'device_type'  => 'sensor',
+                'protocol'     => 'mqtt',
+                'status'       => 'online',
+                'model'        => 'SHT-31D',
+                'manufacturer' => 'Sensirion',
+                'last_seen_at' => now()->subMinutes(random_int(1, 5)),
+            ]);
+
+            $midTemp = ((float) $chamber->target_temp_min_c + (float) $chamber->target_temp_max_c) / 2;
+
+            DeviceChannel::create([
+                'tenant_id'     => $tenant->id,
+                'device_id'     => $device->id,
+                'chamber_id'    => $chamber->id,
+                'channel_key'   => 'temp_1',
+                'metric'        => 'temperature',
+                'unit'          => '°C',
+                'label'         => 'Air temperature',
+                'min_threshold' => $chamber->target_temp_min_c,
+                'max_threshold' => $chamber->target_temp_max_c,
+                'last_value'    => round($midTemp + random_int(-10, 10) / 10, 1),
+                'last_value_at' => now()->subMinutes(random_int(1, 5)),
+            ]);
+            DeviceChannel::create([
+                'tenant_id'     => $tenant->id,
+                'device_id'     => $device->id,
+                'chamber_id'    => $chamber->id,
+                'channel_key'   => 'rh_1',
+                'metric'        => 'humidity',
+                'unit'          => '%',
+                'label'         => 'Relative humidity',
+                'min_threshold' => 60,
+                'max_threshold' => 95,
+                'last_value'    => random_int(70, 92),
+                'last_value_at' => now()->subMinutes(random_int(1, 5)),
+            ]);
+        }
+
+        $meter = Device::create([
+            'tenant_id'    => $tenant->id,
+            'branch_id'    => $branch->id,
+            'device_uid'   => sprintf('METER-%s-01', $branch->code ?? 'BR'),
+            'name'         => 'Main Energy Meter',
+            'device_type'  => 'energy_meter',
+            'protocol'     => 'modbus_tcp',
+            'status'       => 'online',
+            'model'        => 'PM2230',
+            'manufacturer' => 'Schneider',
+            'last_seen_at' => now()->subMinutes(2),
+        ]);
+        DeviceChannel::create([
+            'tenant_id'     => $tenant->id,
+            'device_id'     => $meter->id,
+            'channel_key'   => 'power_total',
+            'metric'        => 'power_kw',
+            'unit'          => 'kW',
+            'label'         => 'Live power draw',
+            'last_value'    => round(9 + random_int(0, 60) / 10, 1),
+            'last_value_at' => now()->subMinutes(2),
+        ]);
+
+        // A believable alert inbox: one live critical, one acknowledged, two resolved.
+        $freezer = $chambers[0];
+        $chiller = $chambers[1] ?? $chambers[0];
+
+        Alert::create([
+            'tenant_id'       => $tenant->id,
+            'branch_id'       => $branch->id,
+            'chamber_id'      => $chiller->id,
+            'alert_type'      => 'temperature_high',
+            'severity'        => 'critical',
+            'status'          => 'active',
+            'title'           => "{$chiller->name}: temperature above band",
+            'message'         => 'Observed 9.4°C against an allowed maximum of 8.0°C for more than 10 minutes.',
+            'metric'          => 'temperature',
+            'threshold_value' => $chiller->target_temp_max_c,
+            'observed_value'  => 9.4,
+            'triggered_at'    => now()->subMinutes(34),
+        ]);
+        Alert::create([
+            'tenant_id'    => $tenant->id,
+            'branch_id'    => $branch->id,
+            'chamber_id'   => $freezer->id,
+            'alert_type'   => 'door_open',
+            'severity'     => 'warning',
+            'status'       => 'acknowledged',
+            'title'        => "{$freezer->name}: door open too long",
+            'message'      => 'Door held open for 6 minutes during loading.',
+            'triggered_at' => now()->subHours(3),
+            'acknowledged_at' => now()->subHours(2),
+        ]);
+        Alert::create([
+            'tenant_id'       => $tenant->id,
+            'branch_id'       => $branch->id,
+            'alert_type'      => 'power_failure',
+            'severity'        => 'critical',
+            'status'          => 'resolved',
+            'title'           => 'Grid outage — running on generator',
+            'message'         => 'Utility supply lost; generator started automatically.',
+            'triggered_at'    => now()->subDays(2),
+            'resolved_at'     => now()->subDays(2)->addHours(3),
+            'resolution_note' => 'Grid restored after 3 hours; generator stopped normally.',
+        ]);
+        Alert::create([
+            'tenant_id'    => $tenant->id,
+            'branch_id'    => $branch->id,
+            'chamber_id'   => $freezer->id,
+            'device_id'    => $meter->id,
+            'alert_type'   => 'device_offline',
+            'severity'     => 'warning',
+            'status'       => 'resolved',
+            'title'        => 'Energy meter offline',
+            'message'      => 'No heartbeat for 15 minutes.',
+            'triggered_at' => now()->subDays(5),
+            'resolved_at'  => now()->subDays(5)->addMinutes(40),
+        ]);
+
+        // 30 days of daily energy: grid + solar (+ generator on outage days).
+        for ($d = 29; $d >= 0; $d--) {
+            $date = now()->subDays($d)->toDateString();
+
+            $gridKwh  = 90 + random_int(-15, 25);   // compressor base load
+            $solarKwh = 35 + random_int(-20, 15);   // weather-dependent
+
+            EnergyConsumption::create([
+                'tenant_id'   => $tenant->id,
+                'branch_id'   => $branch->id,
+                'date'        => $date,
+                'source'      => 'grid',
+                'energy_kwh'  => $gridKwh,
+                'peak_demand_kw' => 14 + random_int(0, 40) / 10,
+                'cost_poisha' => $gridKwh * 9_50,   // ~৳9.50 per kWh
+                'co2_kg'      => round($gridKwh * 0.67, 1),
+            ]);
+            EnergyConsumption::create([
+                'tenant_id'   => $tenant->id,
+                'branch_id'   => $branch->id,
+                'date'        => $date,
+                'source'      => 'solar',
+                'energy_kwh'  => max(5, $solarKwh),
+                'cost_poisha' => 0,
+                'co2_kg'      => 0,
+            ]);
+
+            if ($d % 11 === 3) { // occasional outage → generator hours
+                $genKwh = 20 + random_int(0, 15);
+                EnergyConsumption::create([
+                    'tenant_id'   => $tenant->id,
+                    'branch_id'   => $branch->id,
+                    'date'        => $date,
+                    'source'      => 'generator',
+                    'energy_kwh'  => $genKwh,
+                    'cost_poisha' => $genKwh * 32_00, // diesel ≈ ৳32 per kWh
+                    'co2_kg'      => round($genKwh * 0.85, 1),
+                ]);
             }
         }
     }

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\AlertController;
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Billing\InvoiceController;
 use App\Http\Controllers\Api\Billing\PaymentController;
@@ -9,9 +11,14 @@ use App\Http\Controllers\Api\Billing\RatePlanController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ChamberController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\DeviceController;
+use App\Http\Controllers\Api\EnergyController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\StorageUnitController;
+use App\Http\Controllers\Api\UserController;
 use App\Models\InvoiceLine;
 use Illuminate\Support\Facades\Route;
 
@@ -175,6 +182,62 @@ Route::prefix('v1')->group(function (): void {
                 ->middleware('permission:payments.record');
             Route::post('payments/{payment}/allocate', [PaymentController::class, 'allocate'])
                 ->middleware('permission:payments.record');
+
+            // ── Team: staff accounts ─────────────────────────────────────
+            Route::middleware('permission:users.view')->group(function (): void {
+                Route::get('users', [UserController::class, 'index']);
+                Route::get('users/{user}', [UserController::class, 'show']);
+            });
+            Route::post('users', [UserController::class, 'store'])
+                ->middleware('permission:users.create');
+            Route::put('users/{user}', [UserController::class, 'update'])
+                ->middleware('permission:users.update');
+            Route::delete('users/{user}', [UserController::class, 'destroy'])
+                ->middleware('permission:users.delete');
+            Route::put('users/{user}/roles', [UserController::class, 'syncRoles'])
+                ->middleware('permission:users.assign_roles');
+
+            // ── Team: roles & the permission catalog ─────────────────────
+            Route::middleware('permission:roles.view')->group(function (): void {
+                Route::get('roles', [RoleController::class, 'index']);
+                Route::get('permissions', [RoleController::class, 'permissions']);
+            });
+            Route::middleware('permission:roles.manage')->group(function (): void {
+                Route::post('roles', [RoleController::class, 'store']);
+                Route::put('roles/{role}', [RoleController::class, 'update']);
+                Route::delete('roles/{role}', [RoleController::class, 'destroy']);
+            });
+
+            // ── Reports & compliance ─────────────────────────────────────
+            Route::middleware('permission:reports.view')->group(function (): void {
+                Route::get('reports/occupancy', [ReportController::class, 'occupancy']);
+                Route::get('reports/revenue', [ReportController::class, 'revenue']);
+                Route::get('reports/receivables', [ReportController::class, 'receivables']);
+                Route::get('reports/stock', [ReportController::class, 'stock']);
+            });
+            Route::get('audit-logs', [AuditLogController::class, 'index'])
+                ->middleware('permission:audit.view');
+
+            // ── IoT: devices, alerts, energy ─────────────────────────────
+            Route::middleware('permission:devices.view')->group(function (): void {
+                Route::get('devices', [DeviceController::class, 'index']);
+                Route::get('devices/{device}', [DeviceController::class, 'show']);
+            });
+            Route::middleware('permission:devices.manage')->group(function (): void {
+                Route::post('devices', [DeviceController::class, 'store']);
+                Route::put('devices/{device}', [DeviceController::class, 'update']);
+                Route::delete('devices/{device}', [DeviceController::class, 'destroy']);
+            });
+
+            Route::get('alerts', [AlertController::class, 'index'])
+                ->middleware('permission:alerts.view');
+            Route::post('alerts/{alert}/acknowledge', [AlertController::class, 'acknowledge'])
+                ->middleware('permission:alerts.acknowledge');
+            Route::post('alerts/{alert}/resolve', [AlertController::class, 'resolve'])
+                ->middleware('permission:alerts.acknowledge');
+
+            Route::get('energy/summary', [EnergyController::class, 'summary'])
+                ->middleware('permission:energy.view');
 
         }); // end tenant-scoped group
 

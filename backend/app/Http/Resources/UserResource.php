@@ -40,6 +40,7 @@ class UserResource extends JsonResource
 
             'home_branch_id'    => $this->branch_id,
             'roles'             => $rolesLoaded ? $this->roleSlugs() : [],
+            'role_ids'          => $rolesLoaded ? $this->roles->pluck('id')->all() : [],
             'permissions'       => $rolesLoaded ? $this->effectivePermissionSlugs() : [],
             'branch_ids'        => $branchesLoaded ? $this->accessibleBranchIds() : [],
 

@@ -45,6 +45,7 @@ export interface User {
   home_branch_id:     number | null
   branch_ids:         number[]
   roles:              string[]
+  role_ids?:          number[]
   permissions:        string[]
   is_platform_admin?: boolean
   two_factor_enabled: boolean
@@ -53,6 +54,154 @@ export interface User {
   email_verified_at:  string | null
   last_login_at:      string | null
   created_at:         string
+}
+
+// ─── Team management ──────────────────────────────────────────────────────────
+
+export interface Role {
+  id:          number
+  name:        string
+  slug:        string
+  description: string | null
+  permissions: string[]
+  is_system:   boolean
+  users_count?: number
+  created_at:  string | null
+}
+
+export interface PermissionGroup {
+  module:      string
+  label:       string
+  permissions: { value: string; label: string }[]
+}
+
+export interface StoreUserPayload {
+  name:        string
+  email:       string
+  phone?:      string
+  password?:   string
+  status?:     'active' | 'suspended'
+  branch_id?:  number | null
+  branch_ids?: number[]
+  role_ids?:   number[]
+}
+
+// ─── IoT & energy ─────────────────────────────────────────────────────────────
+
+export interface DeviceChannel {
+  id:            number
+  channel_key:   string
+  metric:        string
+  unit:          string | null
+  label:         string | null
+  min_threshold: number | null
+  max_threshold: number | null
+  last_value:    number | null
+  last_value_at: string | null
+  is_active:     boolean
+}
+
+export interface Device {
+  id:               number
+  device_uid:       string
+  name:             string
+  device_type:      string
+  protocol:         string | null
+  status:           'provisioning' | 'online' | 'offline' | 'fault' | 'decommissioned'
+  branch_id:        number
+  chamber_id:       number | null
+  chamber?:         { id: number; name: string; code: string } | null
+  model:            string | null
+  manufacturer:     string | null
+  firmware_version: string | null
+  last_seen_at:     string | null
+  channels?:        DeviceChannel[]
+  created_at:       string | null
+}
+
+export interface AlertRow {
+  id:              number
+  alert_type:      string
+  severity:        'info' | 'warning' | 'critical' | 'emergency'
+  status:          'active' | 'acknowledged' | 'resolved' | 'suppressed'
+  title:           string
+  message:         string | null
+  metric:          string | null
+  threshold_value: number | null
+  observed_value:  number | null
+  chamber?:        { id: number; name: string } | null
+  triggered_at:    string | null
+  acknowledged_at: string | null
+  resolved_at:     string | null
+  resolution_note: string | null
+}
+
+export interface EnergySummary {
+  from:              string
+  to:                string
+  total_kwh:         number
+  total_cost_poisha: number
+  total_co2_kg:      number
+  solar_share_pct:   number
+  by_source:         { source: string; kwh: number; cost_poisha: number; co2_kg: number }[]
+  series:            { date: string; grid: number; solar: number; generator: number; mixed: number }[]
+}
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+export interface OccupancyRow {
+  chamber_id:         number
+  name:               string
+  code:               string
+  chamber_type:       string
+  status:             string
+  lots:               number
+  quantity:           number
+  weight_kg:          number
+  capacity_weight_kg: number | null
+  occupancy_pct:      number | null
+}
+
+export interface RevenueReport {
+  from:                   string
+  to:                     string
+  total_billed_poisha:    number
+  total_collected_poisha: number
+  series: { date: string; billed_poisha: number; collected_poisha: number }[]
+}
+
+export interface ReceivablesReport {
+  total_due_poisha: number
+  aging: Record<'0_30' | '31_60' | '61_90' | '90_plus', number>
+  customers: {
+    customer_id: number
+    code: string | null
+    name: string | null
+    phone: string | null
+    due_poisha: number
+    invoices: number
+    oldest_days: number
+  }[]
+}
+
+export interface StockReport {
+  total_lots: number
+  by_product: { product_id: number | null; code: string | null; name: string; unit: string; lots: number; quantity: number; weight_kg: number }[]
+  expiring_soon: { lot_id: number; lot_code: string; product: string | null; quantity: number; unit: string; expiry_date: string; days_left: number }[]
+  expiring_days: number
+}
+
+export interface AuditLogRow {
+  id:          number
+  action:      string
+  description: string | null
+  actor_type:  string
+  actor_label: string | null
+  subject:     string | null
+  old:         Record<string, unknown> | null
+  new:         Record<string, unknown> | null
+  ip:          string | null
+  created_at:  string | null
 }
 
 export interface TokenBundle {
@@ -352,6 +501,16 @@ export interface LoginPayload {
   email:    string
   password: string
   otp?:     string
+}
+
+export interface StoreProductPayload {
+  code:                string
+  name:                string
+  category?:           string
+  unit_of_measure:     UnitOfMeasure
+  default_temp_min_c?: number
+  default_temp_max_c?: number
+  shelf_life_days?:    number
 }
 
 export interface StoreCustomerPayload {

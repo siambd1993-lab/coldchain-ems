@@ -6,7 +6,7 @@ import { z }           from 'zod'
 import { authApi }     from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { Button, Input, Alert } from '@/components/ui'
-import type { ApiError } from '@/types'
+import { apiErrorMessage } from '@/utils/apiError'
 
 const schema = z.object({
   email:    z.string().email('Enter a valid email'),
@@ -31,10 +31,9 @@ export function Login() {
     try {
       const data = await authApi.login(values)
       setAuth(data.user, data.access_token, data.refresh_token)
-      navigate('/', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (err) {
-      const e = err as { response?: { data?: ApiError } }
-      setApiError(e?.response?.data?.message ?? 'Login failed. Check your credentials.')
+      setApiError(apiErrorMessage(err, 'Login failed. Check your credentials.'))
     }
   }
 
@@ -68,9 +67,6 @@ export function Login() {
         </Button>
       </form>
 
-      <p className="mt-5 text-center text-xs text-gray-400">
-        Demo: <strong>admin@arcturus.test</strong> / <strong>password</strong>
-      </p>
     </div>
   )
 }

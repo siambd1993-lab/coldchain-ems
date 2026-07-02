@@ -7,6 +7,7 @@ import {
   Users,
   Warehouse,
   Box,
+  Boxes,
   Package,
   Receipt,
   CreditCard,
@@ -17,6 +18,13 @@ import {
   Menu,
   Building2,
   ChevronDown,
+  BarChart3,
+  ScrollText,
+  Cpu,
+  BellRing,
+  Zap,
+  UserCog,
+  ShieldCheck,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore }   from '@/stores/ui'
@@ -25,16 +33,68 @@ import { branchesApi }  from '@/api/branches'
 import { Toaster }      from '@/components/ui/Toaster'
 import { cn }           from '@/utils/cn'
 
-const NAV = [
-  { to: '/',            label: 'Dashboard',  icon: LayoutDashboard, end: true },
-  { to: '/customers',   label: 'Customers',  icon: Users           },
-  { to: '/branches',    label: 'Branches',   icon: Building2       },
-  { to: '/chambers',    label: 'Chambers',   icon: Warehouse       },
-  { to: '/storage-units', label: 'Storage Units', icon: Box        },
-  { to: '/inventory',   label: 'Inventory',  icon: Package         },
-  { to: '/invoices',    label: 'Invoices',   icon: Receipt         },
-  { to: '/payments',    label: 'Payments',   icon: CreditCard      },
-  { to: '/rate-plans',  label: 'Rate Plans', icon: Tag             },
+interface NavItem {
+  to:          string
+  label:       string
+  icon:        typeof LayoutDashboard
+  end?:        boolean
+  /** Hidden when the signed-in user lacks this permission (API enforces anyway). */
+  permission?: string
+}
+
+interface NavSection {
+  title: string | null
+  items: NavItem[]
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    title: null,
+    items: [
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
+    ],
+  },
+  {
+    title: 'Operations',
+    items: [
+      { to: '/customers',     label: 'Customers',     icon: Users,     permission: 'customers.view' },
+      { to: '/inventory',     label: 'Inventory',     icon: Package,   permission: 'stock.view' },
+      { to: '/products',      label: 'Products',      icon: Boxes,     permission: 'stock.view' },
+      { to: '/branches',      label: 'Branches',      icon: Building2, permission: 'branches.view' },
+      { to: '/chambers',      label: 'Chambers',      icon: Warehouse, permission: 'chambers.view' },
+      { to: '/storage-units', label: 'Storage Units', icon: Box,       permission: 'storage_units.view' },
+    ],
+  },
+  {
+    title: 'Billing',
+    items: [
+      { to: '/invoices',   label: 'Invoices',   icon: Receipt,    permission: 'billing.view' },
+      { to: '/payments',   label: 'Payments',   icon: CreditCard, permission: 'payments.view' },
+      { to: '/rate-plans', label: 'Rate Plans', icon: Tag,        permission: 'billing.view' },
+    ],
+  },
+  {
+    title: 'Monitoring',
+    items: [
+      { to: '/devices', label: 'Devices', icon: Cpu,      permission: 'devices.view' },
+      { to: '/alerts',  label: 'Alerts',  icon: BellRing, permission: 'alerts.view' },
+      { to: '/energy',  label: 'Energy',  icon: Zap,      permission: 'energy.view' },
+    ],
+  },
+  {
+    title: 'Insight',
+    items: [
+      { to: '/reports', label: 'Reports',   icon: BarChart3,  permission: 'reports.view' },
+      { to: '/audit',   label: 'Audit Log', icon: ScrollText, permission: 'audit.view' },
+    ],
+  },
+  {
+    title: 'Team',
+    items: [
+      { to: '/users', label: 'Users', icon: UserCog,     permission: 'users.view' },
+      { to: '/roles', label: 'Roles', icon: ShieldCheck, permission: 'roles.view' },
+    ],
+  },
 ]
 
 export function AppLayout() {
@@ -105,24 +165,44 @@ export function AppLayout() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto p-2">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-2 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-                )
-              }
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {sidebarOpen && <span className="truncate">{label}</span>}
-            </NavLink>
-          ))}
+          {NAV_SECTIONS.map((section) => {
+            // Platform admins see everything; tenant users see what their
+            // permissions allow (the API enforces regardless).
+            const items = section.items.filter(
+              (item) => !item.permission
+                || user?.is_platform_admin
+                || user?.permissions?.includes(item.permission),
+            )
+            if (items.length === 0) return null
+
+            return (
+              <div key={section.title ?? 'root'} className="mb-1.5">
+                {section.title && sidebarOpen && (
+                  <p className="mb-0.5 mt-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    {section.title}
+                  </p>
+                )}
+                {items.map(({ to, label, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+                      )
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {sidebarOpen && <span className="truncate">{label}</span>}
+                  </NavLink>
+                ))}
+              </div>
+            )
+          })}
         </nav>
 
         {/* Collapse toggle */}

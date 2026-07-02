@@ -5,7 +5,7 @@ import { Snowflake } from 'lucide-react'
 export function AuthLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
-  if (isAuthenticated) return <Navigate to="/" replace />
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-cyan-50">
