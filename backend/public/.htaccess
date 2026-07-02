@@ -1,3 +1,7 @@
+# Hostinger/CloudLinux: run this directory on PHP 8.4 (composer requires ^8.4
+# while the account default is 8.3). Ignored by nginx in local dev.
+AddHandler application/x-httpd-alt-php84___lsphp .php
+
 # ColdChain EMS — single-origin shared-hosting routing.
 # The built admin SPA (index.html + assets/) is deployed into this same
 # public/ directory, so one subdomain serves both the app shell and the API.

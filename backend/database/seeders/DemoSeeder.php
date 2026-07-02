@@ -436,7 +436,9 @@ class DemoSeeder extends Seeder
                 continue;
             }
 
-            $subtotal = fake()->numberBetween(20_000_00, 200_000_00); // 2,000–20,000 BDT
+            // random_int, not fake(): Faker is a dev dependency and this
+            // seeder also runs on production installs (--no-dev).
+            $subtotal = random_int(20_000_00, 200_000_00); // 2,000–20,000 BDT
             $tax      = (int) ceil($subtotal * 0.15);
             $total    = $subtotal + $tax;
 
