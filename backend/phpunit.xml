@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         stopOnFailure="false"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage>
+        <report>
+            <html outputDirectory="coverage" lowUpperBound="50" highLowerBound="90"/>
+        </report>
+    </coverage>
+
+    <php>
+        <!-- Every variable is declared as BOTH <env> ($_ENV/putenv) and
+             <server> ($_SERVER), all force="true". Laravel's env() consults
+             $_SERVER first, and the app container exports real DB_*/CACHE_*
+             vars pointing at the DEV services — without the <server>
+             overrides `artisan test` would migrate:fresh the DEV MySQL
+             database and wipe its data. -->
+        <env name="APP_ENV"      value="testing" force="true"/>
+        <env name="APP_KEY"      value="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" force="true"/>
+        <env name="APP_DEBUG"    value="true" force="true"/>
+        <server name="APP_ENV"   value="testing" force="true"/>
+        <server name="APP_KEY"   value="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" force="true"/>
+        <server name="APP_DEBUG" value="true" force="true"/>
+
+        <!-- Use SQLite in-memory for speed. Switch to DB_CONNECTION=mysql for
+             integration tests that require MySQL-specific behaviour. -->
+        <env name="DB_CONNECTION"    value="sqlite" force="true"/>
+        <env name="DB_DATABASE"      value=":memory:" force="true"/>
+        <server name="DB_CONNECTION" value="sqlite" force="true"/>
+        <server name="DB_DATABASE"   value=":memory:" force="true"/>
+
+        <env name="CACHE_STORE"      value="array" force="true"/>
+        <env name="SESSION_DRIVER"   value="array" force="true"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="MAIL_MAILER"      value="array" force="true"/>
+        <server name="CACHE_STORE"      value="array" force="true"/>
+        <server name="SESSION_DRIVER"   value="array" force="true"/>
+        <server name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <server name="MAIL_MAILER"      value="array" force="true"/>
+
+        <!-- JWT — must match config/jwt.php defaults. Grace period 0 so a
+             blacklisted (logged-out) token is rejected immediately in tests. -->
+        <env name="JWT_SECRET"          value="test-secret-key-at-least-32-chars-long!!" force="true"/>
+        <env name="JWT_TTL"             value="15" force="true"/>
+        <env name="JWT_REFRESH_TTL"     value="20160" force="true"/>
+        <env name="JWT_ALGO"            value="HS256" force="true"/>
+        <env name="JWT_BLACKLIST_ENABLED" value="true" force="true"/>
+        <env name="JWT_BLACKLIST_GRACE_PERIOD" value="0" force="true"/>
+        <server name="JWT_SECRET"          value="test-secret-key-at-least-32-chars-long!!" force="true"/>
+        <server name="JWT_TTL"             value="15" force="true"/>
+        <server name="JWT_REFRESH_TTL"     value="20160" force="true"/>
+        <server name="JWT_ALGO"            value="HS256" force="true"/>
+        <server name="JWT_BLACKLIST_ENABLED" value="true" force="true"/>
+        <server name="JWT_BLACKLIST_GRACE_PERIOD" value="0" force="true"/>
+
+        <env name="LOG_CHANNEL"      value="null" force="true"/>
+        <env name="BROADCAST_DRIVER" value="null" force="true"/>
+        <server name="LOG_CHANNEL"      value="null" force="true"/>
+        <server name="BROADCAST_DRIVER" value="null" force="true"/>
+    </php>
+</phpunit>

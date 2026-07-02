@@ -1,0 +1,1539 @@
+openapi: 3.1.0
+
+info:
+  title: ColdChain EMS API
+  version: 1.0.0
+  description: |
+    Smart Cold-Storage & Energy Management System for Bangladesh operators.
+
+    **Authentication**
+    - Obtain an access token via `POST /api/v1/auth/login`.
+    - Send it as `Authorization: Bearer <token>` on every protected request.
+    - Refresh with `POST /api/v1/auth/refresh` before it expires (default 15 min TTL).
+
+    **Branch context**
+    - All tenant-scoped endpoints require `X-Branch-Id: <branch_id>` header.
+    - Omitting it is only allowed for tenant-wide endpoints (admin users).
+
+    **Money**
+    All monetary values are in **poisha** (minor units). 1 BDT = 100 poisha.
+
+    **Pagination**
+    List endpoints return standard Laravel pagination. Use `?per_page=N&page=P`.
+
+  contact:
+    name: ColdChain EMS API Support
+    email: api@coldchain.example
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local Docker
+  - url: https://api.coldchain.example/v1
+    description: Production
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # ── Reusable parameters ──────────────────────────────────────────────────
+  parameters:
+    XBranchId:
+      name: X-Branch-Id
+      in: header
+      description: Active branch context for this request.
+      required: false
+      schema:
+        type: integer
+        example: 1
+
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+
+    PerPageParam:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+
+  # ── Common schemas ────────────────────────────────────────────────────────
+  schemas:
+
+    # ── Envelopes ─────────────────────────────────────────────────────────
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:    { type: string, example: VALIDATION_ERROR }
+            message: { type: string, example: The quantity field is required. }
+            details: { type: object, nullable: true }
+            request_id: { type: string, example: "01HXYZ…" }
+
+    PaginationMeta:
+      type: object
+      properties:
+        current_page: { type: integer }
+        last_page:    { type: integer }
+        per_page:     { type: integer }
+        total:        { type: integer }
+        from:         { type: integer, nullable: true }
+        to:           { type: integer, nullable: true }
+
+    PaginationLinks:
+      type: object
+      properties:
+        first: { type: string, format: uri }
+        last:  { type: string, format: uri }
+        prev:  { type: string, format: uri, nullable: true }
+        next:  { type: string, format: uri, nullable: true }
+
+    # ── Auth ─────────────────────────────────────────────────────────────
+    TokenBundle:
+      type: object
+      properties:
+        access_token:  { type: string }
+        token_type:    { type: string, example: Bearer }
+        expires_in:    { type: integer, description: Seconds until access token expires, example: 900 }
+        refresh_token: { type: string, description: Opaque 80-char secret }
+        user:
+          $ref: '#/components/schemas/UserResource'
+
+    UserResource:
+      type: object
+      properties:
+        id:         { type: integer }
+        name:       { type: string }
+        email:      { type: string, format: email }
+        phone:      { type: string, nullable: true }
+        status:     { type: string, enum: [invited, active, suspended] }
+        tenant_id:  { type: integer, nullable: true }
+        branch_id:  { type: integer, nullable: true }
+        roles:      { type: array, items: { type: string }, example: [operator] }
+        permissions: { type: array, items: { type: string }, example: [stock.view, stock.stock_in] }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    # ── Products ──────────────────────────────────────────────────────────
+    ProductResource:
+      type: object
+      properties:
+        id:               { type: integer }
+        tenant_id:        { type: integer }
+        code:             { type: string }
+        name:             { type: string }
+        category:         { type: string, nullable: true }
+        unit_of_measure:  { type: string, enum: [kg, ton, crate, bag, carton, piece, pallet] }
+        default_temp_min_c: { type: number, nullable: true }
+        default_temp_max_c: { type: number, nullable: true }
+        shelf_life_days:  { type: integer, nullable: true }
+        hs_code:          { type: string, nullable: true }
+        created_at:       { type: string, format: date-time }
+
+    StoreProductRequest:
+      type: object
+      required: [code, name, unit_of_measure]
+      properties:
+        code:             { type: string, maxLength: 64 }
+        name:             { type: string, maxLength: 191 }
+        category:         { type: string, nullable: true }
+        unit_of_measure:  { type: string, enum: [kg, ton, crate, bag, carton, piece, pallet] }
+        default_temp_min_c: { type: number }
+        default_temp_max_c: { type: number }
+        shelf_life_days:  { type: integer, minimum: 1 }
+        hs_code:          { type: string }
+
+    # ── Customers ─────────────────────────────────────────────────────────
+    CustomerResource:
+      type: object
+      properties:
+        id:                  { type: integer }
+        code:                { type: string }
+        type:                { type: string, enum: [individual, business] }
+        name:                { type: string }
+        contact_person:      { type: string, nullable: true }
+        email:               { type: string, nullable: true }
+        phone:               { type: string, nullable: true }
+        status:              { type: string, enum: [active, inactive, blocked] }
+        balance_poisha:      { type: integer, description: Outstanding receivable in poisha }
+        credit_limit_poisha: { type: integer }
+        city:                { type: string, nullable: true }
+        district:            { type: string, nullable: true }
+        country:             { type: string, example: BD }
+        created_at:          { type: string, format: date-time }
+
+    StoreCustomerRequest:
+      type: object
+      required: [code, name, type]
+      properties:
+        code:            { type: string, maxLength: 32 }
+        type:            { type: string, enum: [individual, business] }
+        name:            { type: string }
+        contact_person:  { type: string }
+        email:           { type: string, format: email }
+        phone:           { type: string }
+        address_line1:   { type: string }
+        address_line2:   { type: string }
+        city:            { type: string }
+        district:        { type: string }
+        country:         { type: string, minLength: 2, maxLength: 2 }
+        credit_limit_poisha: { type: integer, minimum: 0 }
+        national_id:     { type: string }
+        tax_id:          { type: string }
+        notes:           { type: string }
+
+    # ── Branches ─────────────────────────────────────────────────────────
+    BranchResource:
+      type: object
+      properties:
+        id:              { type: integer }
+        tenant_id:       { type: integer }
+        code:            { type: string }
+        name:            { type: string }
+        status:          { type: string, enum: [active, inactive, under_maintenance] }
+        address_line1:   { type: string, nullable: true }
+        address_line2:   { type: string, nullable: true }
+        city:            { type: string, nullable: true }
+        district:        { type: string, nullable: true }
+        division:        { type: string, nullable: true }
+        postal_code:     { type: string, nullable: true }
+        country:         { type: string, nullable: true, example: BD }
+        latitude:        { type: number, nullable: true }
+        longitude:       { type: number, nullable: true }
+        phone:           { type: string, nullable: true }
+        email:           { type: string, nullable: true }
+        timezone:        { type: string, nullable: true }
+        chambers_count:  { type: integer, description: Present on index/show, which both eager-load the count }
+        created_at:      { type: string, format: date-time }
+        updated_at:      { type: string, format: date-time }
+
+    StoreBranchRequest:
+      type: object
+      required: [code, name]
+      properties:
+        code:            { type: string, maxLength: 64, description: Unique within the tenant }
+        name:            { type: string, maxLength: 255 }
+        status:          { type: string, enum: [active, inactive, under_maintenance] }
+        address_line1:   { type: string }
+        address_line2:   { type: string }
+        city:            { type: string }
+        district:        { type: string }
+        division:        { type: string }
+        postal_code:     { type: string }
+        country:         { type: string, minLength: 2, maxLength: 2, example: BD }
+        latitude:        { type: number, minimum: -90, maximum: 90 }
+        longitude:       { type: number, minimum: -180, maximum: 180 }
+        phone:           { type: string }
+        email:           { type: string, format: email }
+        timezone:        { type: string }
+
+    # ── Chambers ─────────────────────────────────────────────────────────
+    ChamberResource:
+      type: object
+      properties:
+        id:                  { type: integer }
+        branch_id:           { type: integer }
+        code:                { type: string }
+        name:                { type: string }
+        chamber_type:        { type: string, enum: [freezer, chiller, cold_room, blast_freezer, ripening, ambient] }
+        status:              { type: string, enum: [operational, maintenance, offline, defrost] }
+        capacity_weight_kg:  { type: number, nullable: true }
+        capacity_volume_m3:  { type: number, nullable: true }
+        capacity_slots:      { type: integer, nullable: true }
+        target_temp_min_c:   { type: number, nullable: true }
+        target_temp_max_c:   { type: number, nullable: true }
+        current_temp_c:      { type: number, nullable: true }
+        storage_units_count: { type: integer }
+        created_at:          { type: string, format: date-time }
+
+    # ── Storage Units ─────────────────────────────────────────────────────
+    StorageUnitResource:
+      type: object
+      properties:
+        id:                  { type: integer }
+        chamber_id:          { type: integer }
+        branch_id:           { type: integer }
+        code:                { type: string }
+        label:               { type: string, nullable: true }
+        unit_type:           { type: string, enum: [rack, shelf, pallet_position, bin, floor_space, room] }
+        status:              { type: string, enum: [available, occupied, reserved, maintenance] }
+        capacity_weight_kg:  { type: number, nullable: true }
+        occupied_weight_kg:  { type: number }
+        created_at:          { type: string, format: date-time }
+
+    # ── Stock Lots ────────────────────────────────────────────────────────
+    StockLotResource:
+      type: object
+      properties:
+        id:                { type: integer }
+        lot_code:          { type: string }
+        status:            { type: string, enum: [in_storage, partially_released, released, disposed] }
+        unit_of_measure:   { type: string }
+        initial_quantity:  { type: string, description: Decimal string }
+        quantity:          { type: string, description: Current quantity remaining }
+        weight_kg:         { type: string, nullable: true }
+        received_at:       { type: string, format: date-time, nullable: true }
+        expected_release_at: { type: string, format: date, nullable: true }
+        released_at:       { type: string, format: date-time, nullable: true }
+        customer:          { $ref: '#/components/schemas/CustomerResource' }
+        created_at:        { type: string, format: date-time }
+
+    StockMovementResource:
+      type: object
+      properties:
+        id:           { type: integer }
+        lot_id:       { type: integer }
+        type:         { type: string, enum: [stock_in, stock_out, transfer, adjustment] }
+        quantity:     { type: string }
+        balance_after: { type: string, nullable: true }
+        occurred_at:  { type: string, format: date-time }
+        reference:    { type: string, nullable: true }
+        reason:       { type: string, nullable: true }
+
+    # ── Rate Plans ────────────────────────────────────────────────────────
+    RatePlanResource:
+      type: object
+      properties:
+        id:                     { type: integer }
+        code:                   { type: string }
+        name:                   { type: string }
+        billing_method:         { type: string, enum: [per_kg_per_day, per_kg_per_month, per_slot_per_day, per_slot_per_month, per_pallet_per_day, per_pallet_per_month, flat_monthly] }
+        rate_poisha:            { type: integer }
+        minimum_charge_poisha:  { type: integer }
+        grace_days:             { type: integer }
+        tax_rate:               { type: string, example: "15.00" }
+        is_active:              { type: boolean }
+        created_at:             { type: string, format: date-time }
+
+    # ── Invoices ──────────────────────────────────────────────────────────
+    InvoiceLineResource:
+      type: object
+      properties:
+        id:                { type: integer }
+        description:       { type: string }
+        quantity:          { type: string }
+        unit:              { type: string, nullable: true }
+        unit_price_poisha: { type: integer }
+        discount_poisha:   { type: integer }
+        tax_rate:          { type: string }
+        tax_poisha:        { type: integer }
+        amount_poisha:     { type: integer }
+
+    InvoiceResource:
+      type: object
+      properties:
+        id:                  { type: integer }
+        invoice_number:      { type: string, example: INV-2026-0001 }
+        status:              { type: string, enum: [draft, issued, partially_paid, paid, overdue, void] }
+        issue_date:          { type: string, format: date }
+        due_date:            { type: string, format: date, nullable: true }
+        period_start:        { type: string, format: date, nullable: true }
+        period_end:          { type: string, format: date, nullable: true }
+        currency:            { type: string, example: BDT }
+        subtotal_poisha:     { type: integer }
+        discount_poisha:     { type: integer }
+        tax_poisha:          { type: integer }
+        total_poisha:        { type: integer }
+        amount_paid_poisha:  { type: integer }
+        amount_due_poisha:   { type: integer }
+        notes:               { type: string, nullable: true }
+        customer:            { $ref: '#/components/schemas/CustomerResource' }
+        lines:               { type: array, items: { $ref: '#/components/schemas/InvoiceLineResource' } }
+        created_at:          { type: string, format: date-time }
+
+    # ── Payments ─────────────────────────────────────────────────────────
+    PaymentAllocationResource:
+      type: object
+      properties:
+        invoice_id:    { type: integer }
+        amount_poisha: { type: integer }
+
+    PaymentResource:
+      type: object
+      properties:
+        id:                  { type: integer }
+        payment_number:      { type: string, example: RCV-2026-0001 }
+        method:              { type: string, enum: [cash, bkash, nagad, bank_transfer, card, cheque, adjustment] }
+        status:              { type: string, enum: [pending, completed, failed, refunded, cancelled] }
+        currency:            { type: string, example: BDT }
+        amount_poisha:       { type: integer }
+        allocated_poisha:    { type: integer }
+        reference:           { type: string, nullable: true }
+        paid_at:             { type: string, format: date-time, nullable: true }
+        notes:               { type: string, nullable: true }
+        customer:            { $ref: '#/components/schemas/CustomerResource' }
+        allocations:         { type: array, items: { $ref: '#/components/schemas/PaymentAllocationResource' } }
+        created_at:          { type: string, format: date-time }
+
+  # ── Responses ─────────────────────────────────────────────────────────
+  responses:
+    Unauthorized:
+      description: Unauthenticated — token missing, invalid, or expired.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    Forbidden:
+      description: Authenticated but lacking the required permission.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    NotFound:
+      description: Resource not found (or belongs to another tenant).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    Conflict:
+      description: State-machine conflict (e.g. editing a non-draft invoice).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+    UnprocessableEntity:
+      description: Validation error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Global security (overridden on public auth endpoints)
+# ─────────────────────────────────────────────────────────────────────────────
+security:
+  - BearerAuth: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Auth ───────────────────────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and obtain JWT + refresh token
+      security: []   # public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string }
+                otp:      { type: string, description: TOTP code or recovery code (required only when 2FA is enabled) }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TokenBundle' }
+        '401':
+          description: Invalid credentials or account suspended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token and issue a new access token
+      security: []   # public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string, minLength: 40 }
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TokenBundle' }
+        '401':
+          description: Refresh token invalid, expired, or revoked (reuse detected)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Return the authenticated user's profile
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UserResource' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate access token and revoke refresh tokens
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all_devices:
+                  type: boolean
+                  description: Revoke all refresh tokens for this user (default false)
+      responses:
+        '200':
+          description: Logged out
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ── Products ───────────────────────────────────────────────────────────
+
+  /products:
+    get:
+      tags: [Products]
+      summary: List products (commodity catalogue)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - { name: q, in: query, schema: { type: string }, description: Search name or code }
+        - { name: category, in: query, schema: { type: string } }
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Paginated list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:  { type: array, items: { $ref: '#/components/schemas/ProductResource' } }
+                  meta:  { $ref: '#/components/schemas/PaginationMeta' }
+                  links: { $ref: '#/components/schemas/PaginationLinks' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+    post:
+      tags: [Products]
+      summary: Create a product (requires `stock.stock_in`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreProductRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProductResource' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /products/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Products]
+      summary: Show a product
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProductResource' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Products]
+      summary: Update a product (requires `stock.stock_in`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreProductRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProductResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    delete:
+      tags: [Products]
+      summary: Delete a product (requires `stock.adjust`)
+      responses:
+        '200':
+          description: Deleted
+
+  # ── Customers ──────────────────────────────────────────────────────────
+
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List customers / depositors
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - { name: q, in: query, schema: { type: string }, description: Search name, code, phone, or email }
+        - { name: status, in: query, schema: { type: string, enum: [active, inactive, blocked] } }
+        - { name: type, in: query, schema: { type: string, enum: [individual, business] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:  { type: array, items: { $ref: '#/components/schemas/CustomerResource' } }
+                  meta:  { $ref: '#/components/schemas/PaginationMeta' }
+                  links: { $ref: '#/components/schemas/PaginationLinks' }
+    post:
+      tags: [Customers]
+      summary: Create customer (requires `customers.create`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreCustomerRequest' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CustomerResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /customers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Customers]
+      summary: Show customer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CustomerResource' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Customers]
+      summary: Update customer (requires `customers.update`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreCustomerRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CustomerResource' }
+    delete:
+      tags: [Customers]
+      summary: Delete customer (requires `customers.delete`)
+      description: Fails with 409 if the customer has active stock in storage.
+      responses:
+        '200': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ── Branches ───────────────────────────────────────────────────────────
+
+  /branches:
+    get:
+      tags: [Branches]
+      summary: List branches (requires `branches.view`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - { name: status, in: query, schema: { type: string, enum: [active, inactive, under_maintenance] } }
+        - { name: q, in: query, schema: { type: string }, description: Search name or code }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:  { type: array, items: { $ref: '#/components/schemas/BranchResource' } }
+                  meta:  { $ref: '#/components/schemas/PaginationMeta' }
+                  links: { $ref: '#/components/schemas/PaginationLinks' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Branches]
+      summary: Create branch (requires `branches.create`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreBranchRequest' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BranchResource' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /branches/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Branches]
+      summary: Show branch (requires `branches.view`)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BranchResource' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Branches]
+      summary: Update branch (requires `branches.update`)
+      description: |
+        `tenant_id` is immutable — a branch cannot be moved between tenants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreBranchRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BranchResource' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    delete:
+      tags: [Branches]
+      summary: Delete branch (requires `branches.delete`)
+      description: Fails with 409 if the branch still has chambers.
+      responses:
+        '200': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ── Chambers ───────────────────────────────────────────────────────────
+
+  /chambers:
+    get:
+      tags: [Chambers]
+      summary: List chambers
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - { name: status, in: query, schema: { type: string } }
+        - { name: chamber_type, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ChamberResource' } }
+    post:
+      tags: [Chambers]
+      summary: Create chamber (requires `chambers.create`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, chamber_type]
+              properties:
+                code:                { type: string }
+                name:                { type: string }
+                chamber_type:        { type: string, enum: [freezer, chiller, cold_room, blast_freezer, ripening, ambient] }
+                status:              { type: string, enum: [operational, maintenance, offline, defrost] }
+                capacity_weight_kg:  { type: number }
+                capacity_volume_m3:  { type: number }
+                capacity_slots:      { type: integer }
+                target_temp_min_c:   { type: number }
+                target_temp_max_c:   { type: number }
+                floor:               { type: string }
+                zone:                { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChamberResource' }
+
+  /chambers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Chambers]
+      summary: Show chamber
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChamberResource' }
+    put:
+      tags: [Chambers]
+      summary: Update chamber (requires `chambers.update`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Chambers]
+      summary: Delete chamber (requires `chambers.delete`)
+      responses:
+        '200': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ── Storage Units ──────────────────────────────────────────────────────
+
+  /storage-units:
+    get:
+      tags: [Storage Units]
+      summary: List storage units
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - { name: chamber_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [available, occupied, reserved, maintenance] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/StorageUnitResource' } }
+    post:
+      tags: [Storage Units]
+      summary: Create storage unit (requires `storage_units.manage`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chamber_id, code, unit_type]
+              properties:
+                chamber_id:          { type: integer }
+                code:                { type: string }
+                label:               { type: string }
+                unit_type:           { type: string, enum: [rack, shelf, pallet_position, bin, floor_space, room] }
+                capacity_weight_kg:  { type: number }
+                capacity_volume_m3:  { type: number }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StorageUnitResource' }
+
+  /storage-units/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Storage Units]
+      summary: Show storage unit
+      responses:
+        '200': { description: Storage unit }
+    put:
+      tags: [Storage Units]
+      summary: Update storage unit (requires `storage_units.manage`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Storage Units]
+      summary: Delete storage unit (requires `storage_units.manage`)
+      responses:
+        '200': { description: Deleted }
+
+  # ── Stock Lots ─────────────────────────────────────────────────────────
+
+  /stock-lots:
+    get:
+      tags: [Inventory]
+      summary: List stock lots
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [in_storage, partially_released, released, disposed] } }
+        - { name: chamber_id, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date }, description: Filter by received_at ≥ date }
+        - { name: to,   in: query, schema: { type: string, format: date }, description: Filter by received_at ≤ date }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/StockLotResource' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Inventory]
+      summary: Intake — create a new stock lot (requires `stock.stock_in`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, unit_of_measure, quantity, received_at]
+              properties:
+                customer_id:       { type: integer }
+                product_id:        { type: integer }
+                chamber_id:        { type: integer }
+                storage_unit_id:   { type: integer }
+                rate_plan_id:      { type: integer }
+                branch_id:         { type: integer }
+                unit_of_measure:   { type: string, enum: [kg, ton, crate, bag, carton, piece, pallet] }
+                quantity:          { type: number, exclusiveMinimum: 0 }
+                weight_kg:         { type: number }
+                package_count:     { type: integer }
+                description:       { type: string }
+                grade:             { type: string }
+                marks:             { type: string }
+                received_at:       { type: string, format: date-time }
+                expected_release_at: { type: string, format: date }
+                expiry_date:       { type: string, format: date }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StockLotResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /stock-lots/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Inventory]
+      summary: Show stock lot with customer and product
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StockLotResource' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /stock-lots/{id}/movements:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+      - $ref: '#/components/parameters/PageParam'
+    get:
+      tags: [Inventory]
+      summary: Paginated movement ledger for a lot
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/StockMovementResource' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+  /stock-lots/{id}/release:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Inventory]
+      summary: Release stock from lot (requires `stock.stock_out`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity:      { type: number, exclusiveMinimum: 0 }
+                weight_kg:     { type: number }
+                package_count: { type: integer }
+                reference:     { type: string, description: Gate pass / challan number }
+                notes:         { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StockMovementResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /stock-lots/{id}/adjust:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Inventory]
+      summary: Adjust lot quantity with signed delta (requires `stock.adjust`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delta, reason]
+              properties:
+                delta:    { type: number, description: Positive to add, negative to subtract }
+                reason:   { type: string, description: Mandatory reason for audit trail }
+                reference: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StockMovementResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /stock-lots/{id}/transfer:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Inventory]
+      summary: Transfer lot to another chamber/unit (requires `stock.transfer`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_chamber_id]
+              properties:
+                to_chamber_id:      { type: integer }
+                to_storage_unit_id: { type: integer }
+                reason:             { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StockMovementResource' }
+
+  # ── Rate Plans ─────────────────────────────────────────────────────────
+
+  /rate-plans:
+    get:
+      tags: [Billing]
+      summary: List rate plans (requires `billing.view`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/RatePlanResource' } }
+    post:
+      tags: [Billing]
+      summary: Create rate plan (requires `billing.manage`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, billing_method, rate_poisha]
+              properties:
+                code:                   { type: string }
+                name:                   { type: string }
+                billing_method:         { type: string }
+                rate_poisha:            { type: integer, minimum: 0 }
+                minimum_charge_poisha:  { type: integer, minimum: 0 }
+                grace_days:             { type: integer, minimum: 0 }
+                tax_rate:               { type: number, minimum: 0 }
+                is_active:              { type: boolean }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RatePlanResource' }
+
+  /rate-plans/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Billing]
+      summary: Show rate plan
+      responses:
+        '200': { description: Rate plan }
+    put:
+      tags: [Billing]
+      summary: Update rate plan (requires `billing.manage`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Billing]
+      summary: Delete rate plan (requires `billing.manage`)
+      responses:
+        '200': { description: Deleted }
+
+  # ── Invoices ───────────────────────────────────────────────────────────
+
+  /invoices:
+    get:
+      tags: [Billing]
+      summary: List invoices (requires `billing.view`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, issued, partially_paid, paid, overdue, void] } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to,   in: query, schema: { type: string, format: date } }
+        - { name: q,    in: query, schema: { type: string }, description: Search invoice_number or notes }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/InvoiceResource' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Billing]
+      summary: Create draft invoice (requires `billing.manage`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, issue_date]
+              properties:
+                customer_id:      { type: integer }
+                branch_id:        { type: integer }
+                issue_date:       { type: string, format: date }
+                due_date:         { type: string, format: date }
+                period_start:     { type: string, format: date }
+                period_end:       { type: string, format: date }
+                currency:         { type: string, minLength: 3, maxLength: 3 }
+                discount_poisha:  { type: integer, minimum: 0 }
+                notes:            { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/InvoiceResource' }
+
+  /invoices/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Billing]
+      summary: Show invoice with lines
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/InvoiceResource' }
+    put:
+      tags: [Billing]
+      summary: Update draft invoice fields (requires `billing.manage`)
+      description: Only editable while status is `draft`. Returns 409 otherwise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                due_date:        { type: string, format: date }
+                period_start:    { type: string, format: date }
+                period_end:      { type: string, format: date }
+                currency:        { type: string, minLength: 3, maxLength: 3 }
+                discount_poisha: { type: integer, minimum: 0 }
+                notes:           { type: string, maxLength: 2000 }
+      responses:
+        '200': { description: Updated }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Billing]
+      summary: Delete draft invoice (requires `billing.manage`)
+      description: Only deletes drafts. Use `/void` for issued invoices.
+      responses:
+        '200': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /invoices/{id}/issue:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Billing]
+      summary: Issue invoice — draft → issued (requires `billing.generate_invoice`)
+      description: |
+        Transitions the invoice from `draft` to `issued`.
+        Increments `customer.balance_poisha` by `amount_due_poisha`.
+        Fails (422) if the invoice total is zero.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/InvoiceResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /invoices/{id}/void:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Billing]
+      summary: Void invoice (requires `billing.void_invoice`)
+      description: |
+        Reverses the unpaid portion of the invoice from `customer.balance_poisha`.
+        Cannot void an already-voided or fully-paid invoice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [void_reason]
+              properties:
+                void_reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/InvoiceResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /invoices/{id}/lines:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Billing]
+      summary: Add line to draft invoice (requires `billing.manage`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description, quantity, unit_price_poisha]
+              properties:
+                description:       { type: string }
+                lot_id:            { type: integer, nullable: true }
+                rate_plan_id:      { type: integer, nullable: true }
+                quantity:          { type: number, exclusiveMinimum: 0 }
+                unit:              { type: string }
+                unit_price_poisha: { type: integer, minimum: 0 }
+                discount_poisha:   { type: integer, minimum: 0 }
+                tax_rate:          { type: number, minimum: 0 }
+                period_start:      { type: string, format: date }
+                period_end:        { type: string, format: date }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/InvoiceLineResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /invoices/{id}/lines/{lineId}:
+    parameters:
+      - { name: id,     in: path, required: true, schema: { type: integer } }
+      - { name: lineId, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    put:
+      tags: [Billing]
+      summary: Update invoice line (requires `billing.manage`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Updated }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    delete:
+      tags: [Billing]
+      summary: Remove line from draft invoice (requires `billing.manage`)
+      responses:
+        '200': { description: Removed }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  # ── Payments ───────────────────────────────────────────────────────────
+
+  /payments:
+    get:
+      tags: [Billing]
+      summary: List payments (requires `payments.view`)
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+        - $ref: '#/components/parameters/PageParam'
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: method, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to,   in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PaymentResource' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Billing]
+      summary: Record payment with optional allocations (requires `payments.record`)
+      description: |
+        Allocations are applied atomically. Each allocation reduces the invoice's
+        `amount_due_poisha` and the customer's `balance_poisha`.
+        Over-allocation (sum > payment amount) is rejected with 422.
+      parameters:
+        - $ref: '#/components/parameters/XBranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, amount_poisha, method, paid_at]
+              properties:
+                customer_id:   { type: integer }
+                amount_poisha: { type: integer, minimum: 1 }
+                method:        { type: string, enum: [cash, bkash, nagad, bank_transfer, card, cheque, adjustment] }
+                paid_at:       { type: string, format: date-time }
+                reference:     { type: string }
+                notes:         { type: string }
+                allocations:
+                  type: array
+                  items:
+                    type: object
+                    required: [invoice_id, amount_poisha]
+                    properties:
+                      invoice_id:    { type: integer }
+                      amount_poisha: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentResource' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /payments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    get:
+      tags: [Billing]
+      summary: Show payment with allocations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentResource' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /payments/{id}/allocate:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - $ref: '#/components/parameters/XBranchId'
+    post:
+      tags: [Billing]
+      summary: Apply additional allocations to a completed payment (requires `payments.record`)
+      description: |
+        Only `completed` payments can receive additional allocations.
+        Each allocation must not exceed the payment's current unallocated balance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allocations]
+              properties:
+                allocations:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [invoice_id, amount_poisha]
+                    properties:
+                      invoice_id:    { type: integer }
+                      amount_poisha: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PaymentResource' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+tags:
+  - name: Auth
+    description: Authentication — login, refresh, logout, and current user
+  - name: Branches
+    description: Physical cold-storage facilities belonging to a tenant
+  - name: Products
+    description: Commodity catalogue (what is stored)
+  - name: Customers
+    description: Depositors who rent cold storage
+  - name: Chambers
+    description: Temperature-controlled rooms within a branch
+  - name: Storage Units
+    description: Rentable sub-divisions of a chamber (pallet positions, racks, bins)
+  - name: Inventory
+    description: Stock lots and their movement ledger
+  - name: Billing
+    description: Rate plans, invoices (with lines), and payments
