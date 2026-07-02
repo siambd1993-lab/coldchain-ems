@@ -4,7 +4,7 @@ import { Plus, FileCheck, Ban, Trash2, Eye } from 'lucide-react'
 import { billingApi } from '@/api/billing'
 import {
   Button, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, InvoiceStatusBadge, ConfirmDialog,
 } from '@/components/ui'
 import { formatMoney, formatDate } from '@/utils/format'
@@ -23,7 +23,7 @@ export function InvoicesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['invoices', { page }],
     queryFn:  () => billingApi.listInvoices({ page, per_page: 20 }),
   })
@@ -100,7 +100,8 @@ export function InvoicesPage() {
             {isLoading && (
               <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={7} />}
+            {isError && <TableError colSpan={7} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={7} />}
             {data?.data.map((inv) => (
               <TableRow key={inv.id}>
                 <TableTd className="font-mono text-xs font-medium">{inv.invoice_number}</TableTd>

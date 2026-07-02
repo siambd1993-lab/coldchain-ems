@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react'
 import { billingApi } from '@/api/billing'
 import {
   Button, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, PaymentStatusBadge, Badge,
 } from '@/components/ui'
 import { formatMoney, formatDate, capitalize } from '@/utils/format'
@@ -18,7 +18,7 @@ export function PaymentsPage() {
   const [allocateOpen, setAllocateOpen] = useState(false)
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['payments', { page }],
     queryFn:  () => billingApi.listPayments({ page, per_page: 20 }),
   })
@@ -59,7 +59,8 @@ export function PaymentsPage() {
             {isLoading && (
               <tr><td colSpan={8} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={8} />}
+            {isError && <TableError colSpan={8} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={8} />}
             {data?.data.map((p) => (
               <TableRow key={p.id}>
                 <TableTd className="font-mono text-xs">{p.payment_number}</TableTd>

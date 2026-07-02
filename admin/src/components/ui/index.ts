@@ -41,6 +41,7 @@ export {
   TableTh,
   TableTd,
   TableEmpty,
+  TableError,
 }                               from './Table'
 
 export { Pagination }           from './Pagination'

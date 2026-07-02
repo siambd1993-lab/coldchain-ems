@@ -1,6 +1,6 @@
 import { useUiStore } from '@/stores/ui'
 import type { Toast } from '@/stores/ui'
-import type { ApiError } from '@/types'
+import { apiErrorMessage } from '@/utils/apiError'
 
 export function useToast() {
   const addToast = useUiStore((s) => s.addToast)
@@ -29,13 +29,7 @@ export function useToast() {
    * Display an error from an API error envelope.
    */
   function apiError(err: unknown, fallback = 'An unexpected error occurred.') {
-    const e = err as { response?: { data?: ApiError } }
-    const apiMsg =
-      e?.response?.data?.errors
-        ? Object.values(e.response.data.errors).flat().join(' ')
-        : e?.response?.data?.message
-
-    addToast({ variant: 'error', title: 'Error', message: apiMsg ?? fallback })
+    addToast({ variant: 'error', title: 'Error', message: apiErrorMessage(err, fallback) })
   }
 
   return { toast, success, error, info, warning, apiError }

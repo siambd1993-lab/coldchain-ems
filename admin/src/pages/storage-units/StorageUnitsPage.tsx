@@ -4,7 +4,7 @@ import { Plus, Search, Pencil, Trash2, Box } from 'lucide-react'
 import { chambersApi, storageUnitsApi } from '@/api/chambers'
 import {
   Button, Input, Select, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, ConfirmDialog, Badge, UnitStatusBadge,
 } from '@/components/ui'
 import { formatDate, formatQuantity } from '@/utils/format'
@@ -30,7 +30,7 @@ export function StorageUnitsPage() {
     queryFn:  () => chambersApi.list({ per_page: 100 }),
   })
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['storage-units', { page, q: search, chamberId }],
     queryFn:  () => storageUnitsApi.list({
       page,
@@ -129,7 +129,8 @@ export function StorageUnitsPage() {
             {isLoading && (
               <tr><td colSpan={8} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={8} />}
+            {isError && <TableError colSpan={8} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={8} />}
             {data?.data.map((u) => (
               <TableRow key={u.id}>
                 <TableTd>

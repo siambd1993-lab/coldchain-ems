@@ -4,7 +4,7 @@ import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
 import { customersApi } from '@/api/customers'
 import {
   Button, Input, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, ConfirmDialog, Badge,
 } from '@/components/ui'
 import { formatMoney, formatDate } from '@/utils/format'
@@ -24,7 +24,7 @@ export function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing,   setEditing]   = useState<Customer | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['customers', { page, q: search }],
     queryFn:  () => customersApi.list({ page, per_page: 20, q: search }),
   })
@@ -103,7 +103,8 @@ export function CustomersPage() {
             {isLoading && (
               <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={7} />}
+            {isError && <TableError colSpan={7} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={7} />}
             {data?.data.map((c) => (
               <TableRow key={c.id}>
                 <TableTd>

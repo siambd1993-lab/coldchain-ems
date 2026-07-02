@@ -4,7 +4,7 @@ import { Plus, Search, Pencil, Trash2, Building2 } from 'lucide-react'
 import { branchesApi } from '@/api/branches'
 import {
   Button, Input, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, ConfirmDialog, BranchStatusBadge,
 } from '@/components/ui'
 import { formatDate } from '@/utils/format'
@@ -24,7 +24,7 @@ export function BranchesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing,   setEditing]   = useState<Branch | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['branches', { page, q: search }],
     queryFn:  () => branchesApi.list({ page, per_page: 20, q: search }),
   })
@@ -104,7 +104,8 @@ export function BranchesPage() {
             {isLoading && (
               <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={7} />}
+            {isError && <TableError colSpan={7} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={7} />}
             {data?.data.map((b) => (
               <TableRow key={b.id}>
                 <TableTd>

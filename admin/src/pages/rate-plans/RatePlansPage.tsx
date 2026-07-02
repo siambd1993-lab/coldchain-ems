@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { billingApi } from '@/api/billing'
 import {
   Button, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, Badge, ConfirmDialog,
 } from '@/components/ui'
 import { formatMoney, formatDate } from '@/utils/format'
@@ -22,7 +22,7 @@ export function RatePlansPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing,   setEditing]   = useState<RatePlan | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['rate-plans', { page }],
     queryFn:  () => billingApi.listRatePlans({ page }),
   })
@@ -76,7 +76,8 @@ export function RatePlansPage() {
             {isLoading && (
               <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={7} />}
+            {isError && <TableError colSpan={7} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={7} />}
             {data?.data.map((rp) => (
               <TableRow key={rp.id}>
                 <TableTd>

@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { cn } from '@/utils/cn'
+import { apiErrorMessage } from '@/utils/apiError'
 
 export function Table({ className, ...props }: React.HTMLAttributes<HTMLTableElement>) {
   return (
@@ -56,6 +57,24 @@ export function TableEmpty({ colSpan, message = 'No records found.' }: TableEmpt
     <tr>
       <td colSpan={colSpan} className="py-16 text-center text-sm text-gray-400">
         {message}
+      </td>
+    </tr>
+  )
+}
+
+// ── Error state ───────────────────────────────────────────────────────────────
+
+interface TableErrorProps {
+  colSpan: number
+  /** The error thrown by the query (any shape — parsed by apiErrorMessage). */
+  error: unknown
+}
+
+export function TableError({ colSpan, error }: TableErrorProps) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="py-16 text-center text-sm text-red-500">
+        {apiErrorMessage(error, 'Could not load this list.')}
       </td>
     </tr>
   )

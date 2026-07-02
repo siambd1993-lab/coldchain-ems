@@ -4,7 +4,7 @@ import { Plus, ArrowUpFromLine, SlidersHorizontal } from 'lucide-react'
 import { inventoryApi } from '@/api/inventory'
 import {
   Button, Card, CardHeader, CardTitle,
-  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty,
+  Table, TableHead, TableBody, TableRow, TableTh, TableTd, TableEmpty, TableError,
   Pagination, LotStatusBadge,
 } from '@/components/ui'
 import { formatDate, formatQuantity } from '@/utils/format'
@@ -21,7 +21,7 @@ export function InventoryPage() {
   const [adjustOpen,  setAdjustOpen]  = useState(false)
   const [selectedLot, setSelectedLot] = useState<StockLot | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['lots', { page }],
     queryFn:  () => inventoryApi.listLots({ page, per_page: 20 }),
   })
@@ -69,7 +69,8 @@ export function InventoryPage() {
             {isLoading && (
               <tr><td colSpan={8} className="py-10 text-center text-sm text-gray-400">Loading…</td></tr>
             )}
-            {!isLoading && data?.data.length === 0 && <TableEmpty colSpan={8} />}
+            {isError && <TableError colSpan={8} error={error} />}
+            {!isLoading && !isError && data?.data.length === 0 && <TableEmpty colSpan={8} />}
             {data?.data.map((lot) => (
               <TableRow key={lot.id}>
                 <TableTd className="font-mono text-xs">{lot.lot_code}</TableTd>
