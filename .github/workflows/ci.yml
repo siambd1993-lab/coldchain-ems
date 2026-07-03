@@ -1,0 +1,55 @@
+# ColdChain EMS — CI: every push runs the backend test suite and builds the
+# admin SPA in GitHub's cloud. This is the safety net that replaces the local
+# Docker environment when it isn't available: if this workflow is green, the
+# change is safe to deploy.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend-tests:
+    name: Backend tests (Pest, PHP 8.4, sqlite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite, sqlite3, intl, gd, zip, bcmath, sodium
+          coverage: none
+
+      - name: Install composer dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run test suite
+        # phpunit.xml forces sqlite :memory: via <env>/<server> overrides,
+        # so no database service is needed.
+        run: php artisan test
+
+  admin-build:
+    name: Admin SPA build (Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Production build
+        run: VITE_API_BASE_URL=/api/v1 npx vite build
