@@ -30,6 +30,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useUiStore }   from '@/stores/ui'
 import { authApi }      from '@/api/auth'
 import { branchesApi }  from '@/api/branches'
+import { alertsApi }    from '@/api/iot'
 import { Toaster }      from '@/components/ui/Toaster'
 import { cn }           from '@/utils/cn'
 
@@ -121,6 +122,17 @@ export function AppLayout() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Sidebar system-status pill: green unless unresolved alerts exist.
+  const canSeeAlerts = isAuthenticated
+    && !user?.is_platform_admin
+    && user?.permissions?.includes('alerts.view') === true
+  const { data: activeAlerts } = useQuery({
+    queryKey: ['alerts-active-count'],
+    queryFn:  () => alertsApi.list({ per_page: 1, status: 'active' }),
+    enabled:  canSeeAlerts,
+    refetchInterval: 60_000,
+  })
+
   useEffect(() => {
     if (branchData?.data?.length) {
       setAvailableBranches(branchData.data)
@@ -204,6 +216,32 @@ export function AppLayout() {
             )
           })}
         </nav>
+
+        {/* System status pill */}
+        {canSeeAlerts && activeAlerts && sidebarOpen && (
+          <NavLink
+            to="/alerts"
+            className={cn(
+              'mx-2 mb-1 flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-medium',
+              activeAlerts.meta.total === 0
+                ? 'bg-emerald-900 text-emerald-100'
+                : 'bg-red-900 text-red-100',
+            )}
+          >
+            <span className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-full',
+              activeAlerts.meta.total === 0 ? 'bg-emerald-500' : 'bg-red-500',
+            )}>
+              {activeAlerts.meta.total === 0 ? '✓' : '!'}
+            </span>
+            <span>
+              <span className="block text-[10px] uppercase tracking-wide opacity-70">System Status</span>
+              {activeAlerts.meta.total === 0
+                ? 'Everything is OK'
+                : `${activeAlerts.meta.total} active alert${activeAlerts.meta.total > 1 ? 's' : ''}`}
+            </span>
+          </NavLink>
+        )}
 
         {/* Collapse toggle */}
         <div className="border-t border-gray-100 p-2">
