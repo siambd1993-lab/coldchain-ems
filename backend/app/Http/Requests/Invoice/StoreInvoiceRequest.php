@@ -26,6 +26,12 @@ class StoreInvoiceRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->defaultBranchFromContext();
+
+        // Drafts default to being dated today; the real issued_at is stamped
+        // by the issue transition anyway.
+        if (! $this->filled('issue_date')) {
+            $this->merge(['issue_date' => now()->toDateString()]);
+        }
     }
 
     /**

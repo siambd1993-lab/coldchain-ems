@@ -48,6 +48,16 @@ test('accountant can create a draft invoice', function (): void {
     expect($response->json('data.invoice_number'))->toMatch('/^INV-\d{4}-\d{4}$/');
 });
 
+test('draft created without an issue date defaults to today', function (): void {
+    // The SPA modal may omit issue_date entirely — the request defaults it.
+    $this->postJson('/api/v1/invoices', [
+        'customer_id' => $this->customer->id,
+        'branch_id'   => $this->branch->id,
+    ], apiHeaders($this->accountant, $this->branch))
+        ->assertCreated()
+        ->assertJsonPath('data.status', 'draft');
+});
+
 test('draft invoice number increments sequentially per tenant-year', function (): void {
     $headers = apiHeaders($this->accountant, $this->branch);
     $payload = [

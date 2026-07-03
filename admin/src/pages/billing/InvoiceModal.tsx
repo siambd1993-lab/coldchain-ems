@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/useToast'
 
 const schema = z.object({
   customer_id:  z.string().min(1, 'Required'),
+  issue_date:   z.string().min(1, 'Required'),
   period_start: z.string().optional(),
   period_end:   z.string().optional(),
   due_date:     z.string().optional(),
@@ -33,12 +34,15 @@ export function InvoiceModal({ open, onClose }: Props) {
     resolver: zodResolver(schema),
   })
 
-  useEffect(() => { if (open) reset({}) }, [open, reset])
+  useEffect(() => {
+    if (open) reset({ issue_date: new Date().toISOString().slice(0, 10) })
+  }, [open, reset])
 
   const create = useMutation({
     mutationFn: (v: FormValues) =>
       billingApi.createInvoice({
         customer_id:  Number(v.customer_id),
+        issue_date:   v.issue_date,
         period_start: v.period_start || undefined,
         period_end:   v.period_end   || undefined,
         due_date:     v.due_date     || undefined,
@@ -66,10 +70,18 @@ export function InvoiceModal({ open, onClose }: Props) {
             {...register('customer_id')}
           />
           <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Issue date *"
+              type="date"
+              error={errors.issue_date?.message}
+              {...register('issue_date')}
+            />
+            <Input label="Due date" type="date" {...register('due_date')} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Period start" type="date" {...register('period_start')} />
             <Input label="Period end"   type="date" {...register('period_end')} />
           </div>
-          <Input label="Due date" type="date" {...register('due_date')} />
           <Textarea label="Notes" rows={2} {...register('notes')} />
         </div>
         <ModalFooter className="-mx-5 mt-4">
