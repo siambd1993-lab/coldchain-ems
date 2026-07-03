@@ -44,7 +44,7 @@ final class AuditLogController extends Controller
             ->orderByDesc('id')
             ->paginate($this->perPage($request));
 
-        $logs->getCollection()->transform(static fn (AuditLog $log): array => [
+        $rows = $logs->getCollection()->map(static fn (AuditLog $log): array => [
             'id'          => $log->id,
             'action'      => $log->action,
             'description' => $log->description,
@@ -59,6 +59,20 @@ final class AuditLogController extends Controller
             'created_at'  => $log->created_at?->toIso8601String(),
         ]);
 
-        return response()->json($logs);
+        // Standard {data, meta, links} envelope — a raw paginator puts `total`
+        // at the top level and every client here expects meta.total.
+        return response()->json([
+            'data' => $rows,
+            'meta' => [
+                'current_page' => $logs->currentPage(),
+                'last_page'    => $logs->lastPage(),
+                'per_page'     => $logs->perPage(),
+                'total'        => $logs->total(),
+            ],
+            'links' => [
+                'next' => $logs->nextPageUrl(),
+                'prev' => $logs->previousPageUrl(),
+            ],
+        ]);
     }
 }

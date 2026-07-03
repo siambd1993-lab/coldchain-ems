@@ -98,10 +98,12 @@ test('audit log records actions and is filterable', function (): void {
     ], $this->headers)->assertCreated();
 
     $resp = $this->getJson('/api/v1/audit-logs?action=customer.created', $this->headers)
-        ->assertOk();
+        ->assertOk()
+        ->assertJsonStructure(['data', 'meta' => ['total'], 'links']);
 
     expect($resp->json('data.0.action'))->toBe('customer.created')
-        ->and($resp->json('data.0.actor_label'))->toBe($this->owner->email);
+        ->and($resp->json('data.0.actor_label'))->toBe($this->owner->email)
+        ->and($resp->json('meta.total'))->toBeGreaterThan(0);
 });
 
 // ── IoT: devices, alerts, energy ──────────────────────────────────────────────

@@ -183,8 +183,11 @@ export function Dashboard() {
           gradient="from-amber-400 to-orange-500"
           icon={Activity}
           label="Today's Activity"
-          value={activity.data ? String(activity.data.meta.total) : (alerts.data ? String(alerts.data.meta.total) : '—')}
-          sub={activity.data ? 'Recorded actions' : 'Alerts'}
+          value={
+            activity.data?.meta?.total != null ? String(activity.data.meta.total)
+              : alerts.data?.meta?.total != null ? String(alerts.data.meta.total) : '—'
+          }
+          sub={activity.data?.meta?.total != null ? 'Recorded actions' : 'Alerts'}
         />
       </div>
 
